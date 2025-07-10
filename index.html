@@ -111,13 +111,7 @@ function showSuggestions(pIndex) {
       div.className = 'suggestion';
       div.innerHTML = `${i + 1}: ${counts[i]}x = ${total}p `;
 
-      // Ny logik för kolumnval baserat på kastnummer
-      let validCols = [];
-      if (currentRoll === 1) {
-        validCols = [4];
-      } else {
-        validCols = [1, 2, 3];
-      }
+      let validCols = currentRoll === 1 ? [4] : [1, 2, 3];
       validCols.forEach(col => {
         const btn = document.createElement('button');
         btn.className = 'btn btn-sm btn-success fill-button';
@@ -131,11 +125,29 @@ function showSuggestions(pIndex) {
 }
 
 function fillCell(pIndex, col, val, score) {
-  const rowKey = 'r' + val;
   const input = document.getElementById(`p${pIndex}_c${col}_r${val}`);
   if (input && input.value === '') {
     input.value = score;
+    calculateSums(pIndex);
     document.getElementById(`nextBtn${pIndex}`).disabled = false;
+  }
+}
+
+function calculateSums(pIndex) {
+  for (let c = 1; c <= 4; c++) {
+    let sum = 0;
+    for (let i = 0; i < 6; i++) {
+      const val = parseInt(document.getElementById(`p${pIndex}_c${c}_r${i + 1}`).value) || 0;
+      sum += val;
+    }
+    const bonus = sum >= 60 ? 50 : 0;
+    document.getElementById(`p${pIndex}_c${c}_r7`).value = sum;
+    document.getElementById(`p${pIndex}_c${c}_r8`).value = bonus;
+    let total = sum + bonus;
+    for (let i = 9; i <= 15; i++) {
+      total += parseInt(document.getElementById(`p${pIndex}_c${c}_r${i}`)?.value) || 0;
+    }
+    document.getElementById(`p${pIndex}_c${c}_r16`).value = total;
   }
 }
 
@@ -152,7 +164,7 @@ function setupGame() {
       return `<tr><td>${row.label}</td>${cells}</tr>`;
     }).join('');
     section.innerHTML = `
-      <h4>Spelare ${i + 1}</h4>
+      <h4>Spelare ${i + 1}: <input type="text" id="playerName${i}" placeholder="Namn" /></h4>
       <div class="dice-container" id="dice${i}"></div>
       <div id="suggestions${i}" class="suggestions"></div>
       <button class="btn btn-secondary mb-2" id="rollBtn${i}" onclick="rollDice(${i})">Slå tärningar</button>
@@ -175,7 +187,9 @@ function setupGame() {
 }
 
 function updateActivePlayer() {
-  document.getElementById('activePlayerLabel').innerText = `Tur: Spelare ${currentPlayerIndex + 1}`;
+  const nameInput = document.getElementById(`playerName${currentPlayerIndex}`);
+  const name = nameInput && nameInput.value ? nameInput.value : `Spelare ${currentPlayerIndex + 1}`;
+  document.getElementById('activePlayerLabel').innerText = `Tur: ${name}`;
   for (let i = 0; i < numPlayers; i++) {
     document.getElementById(`nextBtn${i}`).disabled = i !== currentPlayerIndex;
     document.getElementById(`rollBtn${i}`).disabled = i !== currentPlayerIndex;
