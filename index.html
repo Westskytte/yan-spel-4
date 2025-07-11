@@ -31,7 +31,7 @@
     }
     .selected { background-color: #d1e7dd; }
     .active-player { border: 2px solid #0d6efd; background-color: #e7f1ff; }
-    .suggestion-btn { margin-right: 5px; }
+    .suggestion-btn { margin-right: 5px; margin-top: 5px; }
     .disabled { pointer-events: none; opacity: 0.6; }
   </style>
 </head>
@@ -44,6 +44,7 @@
       <button class="btn btn-primary mt-2" id="startBtn">Starta spel</button>
     </div>
     <div id="gameArea"></div>
+    <div id="winnerDisplay" class="mt-4"></div>
   </div>
 
   <script>
@@ -167,6 +168,7 @@
       players[i].selected = [false, false, false, false, false];
       players[i].hasChosen = false;
       currentPlayer = (currentPlayer + 1) % players.length;
+      document.getElementById(`suggestions${i}`).innerHTML = "";
       updateActivePlayer();
     }
 
@@ -176,11 +178,11 @@
       const sum = players[p].dice.reduce((a, b) => a + b, 0);
       const results = {};
       for (let i = 0; i < 6; i++) {
-        if (counts[i] > 0) results[`${i+1}:or`] = (i + 1) * counts[i];
+        if (counts[i] > 0) results[`${i + 1}:or`] = (i + 1) * counts[i];
       }
       if (counts.filter(c => c >= 2).length >= 2) results["2 PAR"] = sum + 10;
       if (counts.includes(3) && counts.includes(2)) results["FULL"] = sum + 20;
-      if ((JSON.stringify(counts) === JSON.stringify([1,1,1,1,1,0])) || (JSON.stringify(counts) === JSON.stringify([0,1,1,1,1,1]))) results["STEGE"] = 20;
+      if ((JSON.stringify(counts) === JSON.stringify([1, 1, 1, 1, 1, 0])) || (JSON.stringify(counts) === JSON.stringify([0, 1, 1, 1, 1, 1]))) results["STEGE"] = 20;
       if (counts.includes(4)) results["FYRTAL"] = sum + 40;
       if (counts.includes(5)) results["YAN"] = 50;
       return results;
@@ -201,12 +203,71 @@
     function selectSuggestion(p, key, value) {
       const rowIndex = ROWS.indexOf(key);
       if (rowIndex === -1) return;
-      const col = 2; // default to column 2 (L)
+      const col = determineColumn(p, rowIndex);
+      if (col === -1) return;
       const input = document.getElementById(`cell_${p}_${col}_${rowIndex}`);
       if (input && input.value === "") {
         input.value = value;
         players[p].hasChosen = true;
+        updateTotals(p);
         updateActivePlayer();
+      }
+    }
+
+    function determineColumn(p, row) {
+      const rollCount = players[p].rollCount;
+      if (rollCount === 1) return 4;
+      if (rollCount === 2 || rollCount === 3) {
+        // Check column 2 (L)
+        const input = document.getElementById(`cell_${p}_2_${row}`);
+        if (input && input.value === "") return 2;
+        const input3 = document.getElementById(`cell_${p}_3_${row}`);
+        if (input3 && input3.value === "") return 3;
+      }
+      return -1;
+    }
+
+    function updateTotals(p) {
+      for (let c = 1; c <= 4; c++) {
+        let sum = 0;
+        for (let r = 0; r <= 5; r++) {
+          const val = parseInt(document.getElementById(`cell_${p}_${c}_${r}`).value);
+          if (!isNaN(val)) sum += val;
+        }
+        document.getElementById(`cell_${p}_${c}_6`).value = sum; // SUMMA
+        let bonus = 0;
+        if (sum >= 60) bonus = 50;
+        document.getElementById(`cell_${p}_${c}_7`).value = bonus;
+
+        let total = sum + bonus;
+        for (let r = 8; r <= 14; r++) {
+          const val = parseInt(document.getElementById(`cell_${p}_${c}_${r}`).value);
+          if (!isNaN(val)) total += val;
+        }
+        const multiplier = [0, 2, 1, 3, 4][c];
+        document.getElementById(`cell_${p}_${c}_15`).value = total * multiplier;
+      }
+
+      // Check for winner if all TOTAL are filled
+      let allDone = true;
+      const totals = [];
+      const names = [];
+      for (let i = 0; i < players.length; i++) {
+        let t = 0;
+        let filled = true;
+        for (let c = 1; c <= 4; c++) {
+          const val = parseInt(document.getElementById(`cell_${i}_${c}_15`).value);
+          if (!isNaN(val)) t += val;
+          else filled = false;
+        }
+        if (!filled) allDone = false;
+        totals.push(t);
+        names.push(document.getElementById(`name${i}`).value || `Spelare ${i + 1}`);
+      }
+      if (allDone) {
+        let max = Math.max(...totals);
+        let winner = names[totals.indexOf(max)];
+        document.getElementById("winnerDisplay").innerHTML = `<div class='alert alert-success'>🏆 Vinnare: ${winner} med ${max} poäng!</div>`;
       }
     }
   </script>
