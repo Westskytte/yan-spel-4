@@ -3,273 +3,219 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Yan – Tärningsspel</title>
+  <title>Yan-spel</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
     body { padding: 2rem; }
-    table input { width: 6ch; text-align: center; }
-    .readonly { background: #f8f9fa; }
-    .die {
-      display: inline-block;
-      width: 50px;
-      height: 50px;
-      margin: 4px;
-      border: 2px solid #000;
-      border-radius: 6px;
-      text-align: center;
-      line-height: 48px;
-      font-size: 24px;
-      cursor: pointer;
-      background-color: white;
-      position: relative;
-    }
-    .die::before {
-      content: attr(data-dots);
-      font-size: 24px;
-      display: inline-block;
-      line-height: 50px;
-    }
-    .selected { background-color: #d1e7dd; }
-    .active-player { border: 2px solid #0d6efd; background-color: #e7f1ff; }
-    .suggestion-btn { margin-right: 5px; margin-top: 5px; }
-    .disabled { pointer-events: none; opacity: 0.6; }
+    .dice { font-size: 2rem; cursor: pointer; margin-right: 5px; display: inline-block; width: 40px; height: 40px; text-align: center; line-height: 40px; border: 1px solid #000; border-radius: 6px; }
+    .selected { background-color: #d4edda; }
+    .combination-btn { margin: 2px; }
+    input.readonly { background-color: #eee; pointer-events: none; }
+    .active-player { font-weight: bold; color: green; }
+    .strike-btn { margin-left: 5px; font-size: 0.8rem; }
+    #history { max-height: 200px; overflow-y: auto; margin-top: 2rem; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1 class="mb-4">Yan – Tärningsspel</h1>
-    <div class="mb-3">
-      <label for="numPlayers">Antal spelare:</label>
-      <input type="number" id="numPlayers" class="form-control" value="2" min="1" max="6">
-      <button class="btn btn-primary mt-2" id="startBtn">Starta spel</button>
-    </div>
-    <div id="gameArea"></div>
-    <div id="winnerDisplay" class="mt-4"></div>
+<div class="container">
+  <h1>Yan-spel</h1>
+  <div class="mb-3">
+    <label for="numPlayers" class="form-label">Antal spelare:</label>
+    <input type="number" id="numPlayers" class="form-control" value="2" min="1" max="4">
+    <div id="nameInputs"></div>
+    <button class="btn btn-primary mt-2" onclick="setupGame()">Starta spel</button>
   </div>
+  <div id="game"></div>
+  <div id="history"><h4>Draghistorik</h4><ul id="historyList" class="list-group"></ul></div>
+</div>
 
-  <script>
-    let currentPlayer = 0;
-    const maxRolls = 3;
-    let players = [];
-    const ROWS = ["1:or", "2:or", "3:or", "4:or", "5:or", "6:or", "SUMMA", "BONUS", "MIN", "MAX", "2 PAR", "FULL", "STEGE", "FYRTAL", "YAN", "TOTAL"]
+<script>
+let gameState = {
+  currentPlayer: 0,
+  players: [],
+  dice: [1,1,1,1,1],
+  saved: [false, false, false, false, false],
+  rollsLeft: 3,
+  usedCells: [],
+  history: []
+};
 
-    document.getElementById("startBtn").addEventListener("click", setupGame);
+document.getElementById("numPlayers").addEventListener("change", () => {
+  const container = document.getElementById("nameInputs");
+  container.innerHTML = "";
+  const num = parseInt(document.getElementById("numPlayers").value);
+  for (let i = 0; i < num; i++) {
+    container.innerHTML += `<input type="text" class="form-control mt-1" placeholder="Namn på spelare ${i + 1}" id="playerName${i}">`;
+  }
+});
 
-    function setupGame() {
-      const num = parseInt(document.getElementById("numPlayers").value);
-      const gameArea = document.getElementById("gameArea");
-      gameArea.innerHTML = "";
-      players = [];
+function setupGame() {
+  const num = parseInt(document.getElementById("numPlayers").value);
+  const game = document.getElementById("game");
+  gameState.players = Array(num).fill().map((_, i) => {
+    const nameInput = document.getElementById(`playerName${i}`);
+    return { name: nameInput && nameInput.value ? nameInput.value : `Spelare ${i+1}`, board: {}, score: 0 };
+  });
+  game.innerHTML = '';
+  gameState.currentPlayer = 0;
+  gameState.usedCells = Array(num).fill().map(() => Array(4).fill().map(() => Array(17).fill(false)));
+  gameState.history = [];
+  updateHistory();
 
-      for (let i = 0; i < num; i++) {
-        const section = document.createElement("div");
-        section.className = "p-3 border rounded mb-4";
-        section.id = `player${i}`;
-        section.innerHTML = `
-          <h3>Spelare ${i + 1}: <input type="text" id="name${i}" placeholder="Namn" /></h3>
-          <div id="dice${i}" class="mb-2"></div>
-          <button id="roll${i}" class="btn btn-secondary">Slå tärningar</button>
-          <span id="rollCount${i}">Slag kvar: 3</span>
-          <div id="suggestions${i}" class="mt-2"></div>
-          <button id="nextTurn${i}" class="btn btn-outline-primary mt-2" disabled>Nästa spelare</button>
-          <table class="table table-bordered mt-3 text-center">
-            <thead>
-              <tr>
-                <th>Ruta</th>
-                <th>&darr;</th>
-                <th>L</th>
-                <th>&uarr;</th>
-                <th>1</th>
-              </tr>
-            </thead>
-            <tbody id="tableBody${i}"></tbody>
-          </table>
-        `;
-        gameArea.appendChild(section);
+  gameState.players.forEach((player, idx) => {
+    const playerDiv = document.createElement('div');
+    playerDiv.className = 'mb-4';
+    playerDiv.innerHTML = `
+      <h3 id="playerNameHeader${idx}" class="${idx === gameState.currentPlayer ? 'active-player' : ''}">${player.name}</h3>
+      <div id="dice${idx}"></div>
+      <div id="combinations${idx}"></div>
+      <button class="btn btn-success mt-2" onclick="rollDice(${idx})" id="rollBtn${idx}">Slå tärningar</button>
+      <button class="btn btn-secondary mt-2" onclick="nextPlayer()" id="nextBtn${idx}" disabled>Nästa spelare</button>
+      <table class="table table-bordered mt-2" id="board${idx}"></table>
+      <div><strong>Summa: </strong><span id="sum${idx}">0</span></div>
+    `;
+    game.appendChild(playerDiv);
+    renderBoard(idx);
+  });
+  renderDice();
+  analyzeCombinations();
+}
 
-        const tbody = document.getElementById(`tableBody${i}`);
-        ROWS.forEach((row, r) => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `<td>${row}</td>`;
-          for (let c = 1; c <= 4; c++) {
-            const input = document.createElement("input");
-            input.className = "form-control";
-            input.type = "text";
-            input.readOnly = true;
-            input.id = `cell_${i}_${c}_${r}`;
-            const td = document.createElement("td");
-            td.appendChild(input);
-            tr.appendChild(td);
-          }
-          tbody.appendChild(tr);
-        });
-
-        players.push({
-          dice: [0, 0, 0, 0, 0],
-          selected: [false, false, false, false, false],
-          rollCount: 0,
-          hasChosen: false
-        });
-
-        document.getElementById(`roll${i}`).addEventListener("click", () => rollDice(i));
-        document.getElementById(`nextTurn${i}`).addEventListener("click", () => nextPlayer(i));
-      }
-      updateActivePlayer();
+function rollDice(idx) {
+  if (idx !== gameState.currentPlayer || gameState.rollsLeft === 0) return;
+  for (let i = 0; i < 5; i++) {
+    if (!gameState.saved[i]) {
+      gameState.dice[i] = Math.floor(Math.random() * 6) + 1;
     }
+  }
+  gameState.rollsLeft--;
+  renderDice();
+  analyzeCombinations();
+}
 
-    function rollDice(p) {
-      const player = players[p];
-      if (player.rollCount >= maxRolls || p !== currentPlayer) return;
+function toggleSave(i) {
+  gameState.saved[i] = !gameState.saved[i];
+  renderDice();
+}
 
-      for (let i = 0; i < 5; i++) {
-        if (!player.selected[i]) {
-          player.dice[i] = Math.floor(Math.random() * 6) + 1;
-        }
-      }
-      player.rollCount++;
-      document.getElementById(`rollCount${p}`).innerText = `Slag kvar: ${maxRolls - player.rollCount}`;
-      renderDice(p);
-      const combos = analyzeCombinations(p);
-      renderSuggestions(p, combos);
+function renderDice() {
+  const diceDiv = document.getElementById(`dice${gameState.currentPlayer}`);
+  diceDiv.innerHTML = gameState.dice.map((val, i) =>
+    `<div class="dice ${gameState.saved[i] ? 'selected' : ''}" onclick="toggleSave(${i})">${getDiceSymbol(val)}</div>`
+  ).join('') + `<span class="ms-3">Slag kvar: ${gameState.rollsLeft}</span>`;
+}
+
+function getDiceSymbol(val) {
+  const dots = ["", "⚀","⚁","⚂","⚃","⚄","⚅"];
+  return dots[val];
+}
+
+function renderBoard(idx) {
+  const board = document.getElementById(`board${idx}`);
+  const rows = ["1","2","3","4","5","6","SUM","BONUS","MIN","MAX","2PAR","FULL","STEGE","FYRTAL","YAN"];
+  const cols = ["↓","L","↑","1"];
+  let html = `<tr><th>Ruta</th>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
+  rows.forEach((row, ri) => {
+    html += `<tr><td>${row}</td>`;
+    for (let ci = 0; ci < 4; ci++) {
+      html += `<td id="cell_${idx}_${ci}_${ri}"><button class='btn btn-sm btn-outline-danger strike-btn' onclick='fillCell(${ci},${ri},0)'>Stryk</button></td>`;
     }
+    html += `</tr>`;
+  });
+  board.innerHTML = html;
+}
 
-    function renderDice(p) {
-      const player = players[p];
-      const container = document.getElementById(`dice${p}`);
-      container.innerHTML = "";
-      player.dice.forEach((val, i) => {
-        const die = document.createElement("div");
-        die.className = "die" + (player.selected[i] ? " selected" : "");
-        die.setAttribute("data-dots", getDieUnicode(val));
-        die.onclick = () => {
-          player.selected[i] = !player.selected[i];
-          renderDice(p);
-        };
-        container.appendChild(die);
-      });
-    }
+function analyzeCombinations() {
+  const dice = [...gameState.dice];
+  const counts = [0,0,0,0,0,0,0];
+  dice.forEach(d => counts[d]++);
+  const results = [];
+  for (let i = 1; i <= 6; i++) {
+    if (counts[i] > 0) results.push({ name: `${i}:or`, points: counts[i]*i, row: i-1 });
+  }
+  const pair2 = counts.filter(c => c >= 2).length >= 2;
+  const full = counts.includes(3) && counts.includes(2);
+  const stege = JSON.stringify(counts.slice(1)) === JSON.stringify([1,1,1,1,1,0]) || JSON.stringify(counts.slice(1)) === JSON.stringify([0,1,1,1,1,1]);
+  const fyrtal = counts.includes(4);
+  const yan = counts.includes(5);
+  if (pair2) results.push({ name: "2PAR", points: dice.reduce((a,b)=>a+b), row:10 });
+  if (full) results.push({ name: "FULL", points: dice.reduce((a,b)=>a+b)+20, row:11 });
+  if (stege) results.push({ name: "STEGE", points: 30, row:12 });
+  if (fyrtal) results.push({ name: "FYRTAL", points: dice.reduce((a,b)=>a+b), row:13 });
+  if (yan) results.push({ name: "YAN", points: 50, row:14 });
+  results.push({ name: "MIN", points: dice.reduce((a,b)=>a+b), row:8 });
+  results.push({ name: "MAX", points: dice.reduce((a,b)=>a+b), row:9 });
+  displayCombinations(results);
+}
 
-    function getDieUnicode(val) {
-      const dots = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
-      return val > 0 ? dots[val - 1] : "-";
-    }
-
-    function updateActivePlayer() {
-      for (let i = 0; i < players.length; i++) {
-        document.getElementById(`player${i}`).classList.toggle("active-player", i === currentPlayer);
-        document.getElementById(`roll${i}`).disabled = i !== currentPlayer;
-        document.getElementById(`nextTurn${i}`).disabled = !players[i].hasChosen || i !== currentPlayer;
-      }
-    }
-
-    function nextPlayer(i) {
-      if (!players[i].hasChosen) return;
-      players[i].rollCount = 0;
-      players[i].selected = [false, false, false, false, false];
-      players[i].hasChosen = false;
-      currentPlayer = (currentPlayer + 1) % players.length;
-      document.getElementById(`suggestions${i}`).innerHTML = "";
-      updateActivePlayer();
-    }
-
-    function analyzeCombinations(p) {
-      const counts = [0, 0, 0, 0, 0, 0];
-      players[p].dice.forEach(val => counts[val - 1]++);
-      const sum = players[p].dice.reduce((a, b) => a + b, 0);
-      const results = {};
-      for (let i = 0; i < 6; i++) {
-        if (counts[i] > 0) results[`${i + 1}:or`] = (i + 1) * counts[i];
-      }
-      if (counts.filter(c => c >= 2).length >= 2) results["2 PAR"] = sum + 10;
-      if (counts.includes(3) && counts.includes(2)) results["FULL"] = sum + 20;
-      if ((JSON.stringify(counts) === JSON.stringify([1, 1, 1, 1, 1, 0])) || (JSON.stringify(counts) === JSON.stringify([0, 1, 1, 1, 1, 1]))) results["STEGE"] = 20;
-      if (counts.includes(4)) results["FYRTAL"] = sum + 40;
-      if (counts.includes(5)) results["YAN"] = 50;
-      return results;
-    }
-
-    function renderSuggestions(p, combos) {
-      const container = document.getElementById(`suggestions${p}`);
-      container.innerHTML = "<strong>Möjliga kombinationer:</strong> ";
-      for (let [key, value] of Object.entries(combos)) {
-        const btn = document.createElement("button");
-        btn.className = "btn btn-sm btn-success suggestion-btn";
-        btn.textContent = `${key}: ${value} (Välj)`;
-        btn.onclick = () => selectSuggestion(p, key, value);
-        container.appendChild(btn);
+function displayCombinations(results) {
+  const container = document.getElementById(`combinations${gameState.currentPlayer}`);
+  container.innerHTML = '<strong>Möjliga kombinationer:</strong><br>';
+  results.forEach(r => {
+    for (let c = 0; c < 4; c++) {
+      const used = gameState.usedCells[gameState.currentPlayer][c][r.row];
+      if (!used) {
+        container.innerHTML += `<button class="btn btn-sm btn-outline-success combination-btn" onclick="fillCell(${c},${r.row},${r.points})">${r.name} → ${c+1}: ${r.points}p</button>`;
       }
     }
+  });
+}
 
-    function selectSuggestion(p, key, value) {
-      const rowIndex = ROWS.indexOf(key);
-      if (rowIndex === -1) return;
-      const col = determineColumn(p, rowIndex);
-      if (col === -1) return;
-      const input = document.getElementById(`cell_${p}_${col}_${rowIndex}`);
-      if (input && input.value === "") {
-        input.value = value;
-        players[p].hasChosen = true;
-        updateTotals(p);
-        updateActivePlayer();
-      }
-    }
+function fillCell(col, row, points) {
+  const p = gameState.currentPlayer;
+  if (gameState.usedCells[p][col][row]) return;
+  const cell = document.getElementById(`cell_${p}_${col}_${row}`);
+  cell.innerHTML = `<input class="form-control readonly" readonly value="${points}">`;
+  gameState.usedCells[p][col][row] = true;
+  gameState.players[p].board[`${col}_${row}`] = points;
+  gameState.rollsLeft = 0;
+  document.getElementById(`nextBtn${p}`).disabled = false;
+  document.getElementById(`combinations${p}`).innerHTML = '';
+  gameState.history.unshift(`${gameState.players[p].name} valde ruta ${row+1} i kolumn ${col+1} (${points} poäng)`);
+  if (gameState.history.length > 10) gameState.history.pop();
+  updateHistory();
+  calculateSum(p);
+  renderDice();
+}
 
-    function determineColumn(p, row) {
-      const rollCount = players[p].rollCount;
-      if (rollCount === 1) return 4;
-      if (rollCount === 2 || rollCount === 3) {
-        // Check column 2 (L)
-        const input = document.getElementById(`cell_${p}_2_${row}`);
-        if (input && input.value === "") return 2;
-        const input3 = document.getElementById(`cell_${p}_3_${row}`);
-        if (input3 && input3.value === "") return 3;
-      }
-      return -1;
-    }
+function updateHistory() {
+  const list = document.getElementById("historyList");
+  list.innerHTML = '';
+  gameState.history.forEach(h => {
+    list.innerHTML += `<li class="list-group-item">${h}</li>`;
+  });
+}
 
-    function updateTotals(p) {
-      for (let c = 1; c <= 4; c++) {
-        let sum = 0;
-        for (let r = 0; r <= 5; r++) {
-          const val = parseInt(document.getElementById(`cell_${p}_${c}_${r}`).value);
-          if (!isNaN(val)) sum += val;
-        }
-        document.getElementById(`cell_${p}_${c}_6`).value = sum; // SUMMA
-        let bonus = 0;
-        if (sum >= 60) bonus = 50;
-        document.getElementById(`cell_${p}_${c}_7`).value = bonus;
+function calculateSum(p) {
+  let total = 0;
+  Object.values(gameState.players[p].board).forEach(v => total += v);
+  const bonus = (gameState.players[p].board['0_0'] || 0) + (gameState.players[p].board['0_1'] || 0) + (gameState.players[p].board['0_2'] || 0) + (gameState.players[p].board['0_3'] || 0) + (gameState.players[p].board['0_4'] || 0) + (gameState.players[p].board['0_5'] || 0);
+  if (bonus >= 84) total += 50;
+  document.getElementById(`sum${p}`).innerText = total;
+  gameState.players[p].score = total;
+}
 
-        let total = sum + bonus;
-        for (let r = 8; r <= 14; r++) {
-          const val = parseInt(document.getElementById(`cell_${p}_${c}_${r}`).value);
-          if (!isNaN(val)) total += val;
-        }
-        const multiplier = [0, 2, 1, 3, 4][c];
-        document.getElementById(`cell_${p}_${c}_15`).value = total * multiplier;
-      }
+function nextPlayer() {
+  const p = gameState.currentPlayer;
+  document.getElementById(`nextBtn${p}`).disabled = true;
+  document.getElementById(`playerNameHeader${p}`).classList.remove("active-player");
+  gameState.currentPlayer = (p + 1) % gameState.players.length;
+  gameState.rollsLeft = 3;
+  gameState.dice = [1,1,1,1,1];
+  gameState.saved = [false,false,false,false,false];
+  document.getElementById(`playerNameHeader${gameState.currentPlayer}`).classList.add("active-player");
+  renderDice();
+  analyzeCombinations();
+  checkWinner();
+}
 
-      // Check for winner if all TOTAL are filled
-      let allDone = true;
-      const totals = [];
-      const names = [];
-      for (let i = 0; i < players.length; i++) {
-        let t = 0;
-        let filled = true;
-        for (let c = 1; c <= 4; c++) {
-          const val = parseInt(document.getElementById(`cell_${i}_${c}_15`).value);
-          if (!isNaN(val)) t += val;
-          else filled = false;
-        }
-        if (!filled) allDone = false;
-        totals.push(t);
-        names.push(document.getElementById(`name${i}`).value || `Spelare ${i + 1}`);
-      }
-      if (allDone) {
-        let max = Math.max(...totals);
-        let winner = names[totals.indexOf(max)];
-        document.getElementById("winnerDisplay").innerHTML = `<div class='alert alert-success'>🏆 Vinnare: ${winner} med ${max} poäng!</div>`;
-      }
-    }
-  </script>
+function checkWinner() {
+  const allFilled = gameState.players.every(player => Object.keys(player.board).length >= 15 * 1);
+  if (allFilled) {
+    const winner = gameState.players.reduce((a,b) => a.score > b.score ? a : b);
+    alert(`${winner.name} vinner med ${winner.score} poäng!`);
+  }
+}
+</script>
 </body>
 </html>
