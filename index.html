@@ -150,34 +150,6 @@ function toggleHold(index) {
   // Begränsning för MAX (rad 9)
   if (row === 9) {
     const maxSum = dice.reduce((a, b) => a + b, 0);
-    const minVal = card[8];
-
-    const requiresPrompt = (col === '⬆' && rollCount === 3) ||
-                           (col === '1' && rollCount === 1) ||
-                           (col === 'L' && rollCount >= 1);
-
-    if (maxSum <= 18 && requiresPrompt) {
-      const confirmZero = confirm(`Du har ${maxSum} poäng (under 19). Vill du sätta 0 i 'MAX' i kolumn '${col}'?`);
-      if (!confirmZero) return;
-      card[9] = 0;
-      const cell = document.getElementById(`cell-${col}-9`);
-      cell.textContent = 0;
-      cell.classList.add("filled");
-      cell.onclick = null;
-      rollCount = 0;
-      held = [false, false, false, false, false];
-      document.getElementById("rollsLeft").textContent = 3;
-      renderDice();
-      updateTotals();
-      return;
-    }
-
-    if (minVal !== null && maxSum <= minVal && rollCount !== 3) return alert("MAX måste vara högre än MIN om MIN redan är ifylld.");
-  }
-
-  // Begränsning för MAX (rad 9)
-
-    const maxSum = dice.reduce((a, b) => a + b, 0);
     if (card[8] !== null && maxSum <= card[8] && rollCount !== 3) return alert("MAX måste vara högre än MIN om MIN redan är ifylld.");
   }
 
