@@ -1,0 +1,110 @@
+import * as Tone from 'tone';
+
+// Synthesizers and effects
+let clickSynth, scoreSynth, dicePlayer;
+
+export const setSoundProfile = () => {};
+export const getSoundProfile = () => 'RECORDED';
+
+let globalVolume = 0; // dB, 0 is full volume, -Infinity is mute
+
+export const setVolume = (value) => {
+    // Value is 0 to 1, map to dB (-60 to 0)
+    const db = value === 0 ? -Infinity : 20 * Math.log10(value);
+    globalVolume = db;
+    if (Tone && Tone.getDestination()) {
+        Tone.getDestination().volume.rampTo(db, 0.1);
+    }
+};
+
+export const getVolume = () => {
+    if (globalVolume === -Infinity) return 0;
+    return Math.pow(10, globalVolume / 20);
+};
+
+const initAudio = () => {
+    try {
+        if (!Tone) return;
+
+        const T = Tone.default || Tone;
+        T.getDestination().volume.value = globalVolume;
+
+        // Initialize Player for recorded sound
+        if (!dicePlayer) {
+            dicePlayer = new T.Player({
+                url: "assets/u_qpfzpydtro-dice-142528.mp3",
+                autostart: false,
+            }).toDestination();
+        }
+
+        if (clickSynth) return;
+
+        clickSynth = new T.MonoSynth({
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.001, decay: 0.1, sustain: 0 }
+        }).toDestination();
+
+        scoreSynth = new T.PolySynth(T.Synth).toDestination();
+    } catch (e) {
+        console.warn("Audio initialization failed:", e);
+    }
+};
+
+export const playRollSound = () => {
+    initAudio();
+    
+    try {
+        const T = Tone.default || Tone;
+        if (T.context.state !== 'running') T.start();
+
+        if (dicePlayer && dicePlayer.loaded) {
+            // Play the recorded MP3 with a slight pitch variation for realism
+            dicePlayer.playbackRate = 0.9 + Math.random() * 0.2;
+            dicePlayer.start();
+        }
+    } catch (e) {
+        console.debug("playRollSound schedule conflict");
+    }
+};
+
+export const playHoldSound = (isHeld) => {
+    initAudio();
+    if (!clickSynth) return;
+    try {
+        const T = Tone.default || Tone;
+        if (T.context.state !== 'running') T.start();
+        clickSynth.triggerAttackRelease(isHeld ? 'E5' : 'B4', '32n', undefined, 0.3);
+    } catch (e) {}
+};
+
+export const playScoreSound = () => {
+    initAudio();
+    if (!scoreSynth) return;
+    try {
+        const T = Tone.default || Tone;
+        if (T.context.state !== 'running') T.start();
+        scoreSynth.triggerAttackRelease(['G4', 'B4', 'D5'], '8n', undefined, 0.4);
+    } catch (e) {}
+};
+
+export const playThudSound = () => {
+    // Collision sounds disabled to keep audio clean and focused on the recording
+    return;
+};
+
+
+export const playWinSound = () => {
+    initAudio();
+    if (!scoreSynth) return;
+    
+    try {
+        if (Tone.context.state !== 'running') Tone.start();
+        const now = Tone.now();
+        scoreSynth.triggerAttackRelease('C4', '8n', now);
+        scoreSynth.triggerAttackRelease('E4', '8n', now + 0.1);
+        scoreSynth.triggerAttackRelease('G4', '8n', now + 0.2);
+        scoreSynth.triggerAttackRelease('C5', '4n', now + 0.3);
+    } catch (e) {
+        console.error("playWinSound error:", e);
+    }
+};
